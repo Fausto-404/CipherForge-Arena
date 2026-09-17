@@ -30,7 +30,7 @@ CipherForge Arena 是一个面向 JavaScript 逆向、前端加密分析和浏�
 
 段位只用于导航和难度标识，所有段位默认可以直接进入。完成状态用于记录进度和评分，不作为访问门槛。
 
-旧版 AES、DES、RSA、混合加密、签名和防重放共 8 题保留在根目录，作为 Legacy 入门区。迁移策略见 [ADVANCED_LAB_BLUEPRINT.md](ADVANCED_LAB_BLUEPRINT.md)。
+项目只保留 CipherForge Arena 新主线，不再维护旧版独立 AES/DES/RSA 入口；标准算法已经按难度重新编排进 18 道主线题。
 
 ## 本地启动
 
@@ -56,7 +56,7 @@ docker compose up --build
 
 ```text
 .
-├── legacy endpoints       # 原有 8 题
+├── index.php                # 根路径重定向到主线
 ├── v2/
 │   ├── api.php             # 题目列表、上下文、提交验证
 │   ├── bootstrap.php       # SQLite、Session、验证器
@@ -64,11 +64,14 @@ docker compose up --build
 │   ├── assets/             # 页面、运行时脚本、品牌资源
 │   └── storage/            # 本地运行数据，不提交
 ├── ADVANCED_LAB_BLUEPRINT.md
+├── services/crypto-runtime/  # Go 高难协议验证运行时
 ├── Dockerfile
 └── docker-compose.yml
 ```
 
 品牌资源位于 `v2/assets/brand/`：`cipherforge-arena-icon.svg` 为透明 Icon，`cipherforge-arena-background.svg` 为页面背景。
+
+Docker 部署由 PHP Web 和 Go Crypto Runtime 两个服务组成。PHP 负责页面与题目编排，铂金/王者级的关键验证在独立 Go 服务中完成。
 
 ## 设计原则
 
@@ -77,7 +80,7 @@ docker compose up --build
 - nonce、时间窗、AAD、请求体语义和状态顺序由服务端校验。
 - 反调试只作为分析面的一部分，不制造无法恢复的浏览器死循环。
 - 题目可以通过动态分析，也可以通过理解协议后独立复现。
-- Legacy 题保留入门价值，但不作为新主线的安全实现标准。
+- 标准密码学题作为新主线的一部分提供，不保留平行 Legacy 入口。
 
 ## 研究与使用边界
 

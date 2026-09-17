@@ -150,9 +150,47 @@ function arena_device_hash(array $data): string
     return hash('sha256', implode('&', $parts));
 }
 
+function arena_runtime_verify(string $id, array $payload, array $ctx): ?array
+{
+    $runtimeUrl = getenv('ARENA_RUNTIME_URL');
+    if (!$runtimeUrl) {
+        return null;
+    }
+    $requestBody = json_encode([
+        'challenge' => $id,
+        'seed' => $ctx['seed'],
+        'nonce' => $ctx['nonce'],
+        'payload' => $payload,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $httpContext = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => "Content-Type: application/json\r\nConnection: close\r\n",
+            'content' => $requestBody ?: '{}',
+            'timeout' => 2,
+            'ignore_errors' => true,
+        ],
+    ]);
+    $raw = @file_get_contents($runtimeUrl, false, $httpContext);
+    if ($raw === false) {
+        return [false, 'crypto runtime unavailable'];
+    }
+    $result = json_decode($raw, true);
+    if (!is_array($result) || !array_key_exists('ok', $result)) {
+        return [false, 'crypto runtime invalid response'];
+    }
+    return [(bool)$result['ok'], (string)($result['detail'] ?? 'runtime verification')];
+}
+
 function arena_verify(string $id, array $payload, array $ctx): array
 {
     $seed = $ctx['seed'];
+    if (in_array($id, ['P01', 'P02', 'P03', 'K01', 'K02', 'K03'], true)) {
+        $runtimeResult = arena_runtime_verify($id, $payload, $ctx);
+        if ($runtimeResult !== null) {
+            return $runtimeResult;
+        }
+    }
     $message = '';
     switch ($id) {
         case 'B01':

@@ -1,5 +1,5 @@
 services:
-  cipherforge:
+  cipherforge-web:
     build:
       context: .
       dockerfile: Dockerfile
@@ -7,6 +7,22 @@ services:
     command: php -S 0.0.0.0:8080 -t /workspace
     ports:
       - "8080:8080"
+    environment:
+      ARENA_RUNTIME_URL: http://cipherforge-runtime:9090/verify
+    depends_on:
+      cipherforge-runtime:
+        condition: service_healthy
     volumes:
       - ./:/workspace
 
+  cipherforge-runtime:
+    build:
+      context: ./services/crypto-runtime
+      dockerfile: Dockerfile
+    expose:
+      - "9090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
