@@ -1,87 +1,86 @@
-# encrypt-labs
-> 说明：之前自己在学习前端加解密经常遇到加密解不了的情况；之后慢慢看师傅们的文章，也学到了很多绕过技术，于是写了个简单的靶场，为之后的师傅们铺路学习,加密方式列出了我经常见的8种方式包含非对称加密、对称加密、加签以及禁止重放的测试场景，比如AES、DES、RSA，用于渗透测试加解密练习。希望可以帮助到最近在学习这块知识的师傅，靶场函数.很简单，和实战相比还是差的有点多，不过应该够入门了
+# CipherForge Arena
 
-js代码做了混淆，感觉较难分析的可以使用easy.php进行练习
+密钥工场 · 前端协议对抗靶场
 
-- 在线体验地址：
+CipherForge Arena 是一个面向 JavaScript 逆向、前端加密分析和浏览器运行时协议研究的本地训练靶场。
 
-默认密码：admin/123456
+项目不把难度建立在单纯的长代码和乱码上，而是逐步引入：
 
-http://82.156.57.228:43899  (混淆)
+- 标准密码学与自定义编码；
+- 请求规范化、HMAC、Session、nonce 和防重放；
+- ESM 动态模块、控制流混淆和运行时完整性检测；
+- Dedicated Worker、WASM、Service Worker 和 CacheStorage；
+- 设备摘要、行为遥测、PoW、字节码 VM；
+- 多阶段密钥状态机、密钥轮转和综合业务协议。
 
-http://82.156.57.228:43899/easy.php （无混淆）
+## 当前版本
 
-## 食用方式:
+主线版本：`2.3.0-dev`
 
-Nginx+mysql+php8放在网站路径+导入数据库即可食用
+共 6 个段位、18 道主线题：
 
-Ta0ing师傅提供了docker版本的
+| 段位 | 题目 |
+| --- | --- |
+| 青铜级 | B01 盐与摘要、B02 CBC 登录、B03 公钥拼图 |
+| 白银级 | S01 规范化签名、S02 会话密钥、S03 模块迷宫 |
+| 黄金级 | G01 扁平迷宫、G02 镜中调试器、G03 魔改轮函数 |
+| 铂金级 | P01 Worker 密封舱、P02 WASM 黑盒、P03 网络影子 |
+| 钻石级 | D01 设备合约、D02 轨迹凭证、D03 字节码金库 |
+| 王者级 | K01 零售银行登录链、K02 风控 SDK、K03 王者终局 |
+
+段位只用于导航和难度标识，所有段位默认可以直接进入。完成状态用于记录进度和评分，不作为访问门槛。
+
+旧版 AES、DES、RSA、混合加密、签名和防重放共 8 题保留在根目录，作为 Legacy 入门区。迁移策略见 [ADVANCED_LAB_BLUEPRINT.md](ADVANCED_LAB_BLUEPRINT.md)。
+
+## 本地启动
+
+环境要求：PHP 8.2+，启用 `PDO_SQLite`、`OpenSSL` 和 `Session`。
+
+```bash
+php -S 127.0.0.1:8123 -t .
 ```
-git clone https://github.com/Ta0ing/encrypt-labs-docker.git
-docker-compose up -d --build
+
+打开：<http://127.0.0.1:8123/v2/>
+
+首次访问时会在 `v2/storage/` 创建本地 SQLite 数据库和服务端 RSA 密钥。该目录已被 `.gitignore` 排除。
+
+## Docker
+
+```bash
+docker compose up --build
 ```
-<img width="1326" alt="image" src="https://github.com/user-attachments/assets/c19d3edb-ad2c-4a51-9f52-c0bd384ffb67">
-<img width="1837" alt="image" src="https://github.com/user-attachments/assets/b73967bd-9106-486c-b2df-4614147806dc">
 
-如果对你有帮助的话，来点🌟🌟🌟，食用起来会更香！
+打开：<http://127.0.0.1:8080/v2/>
 
+## 目录
 
-配合其他的github项目和文章进行练习<br>
+```text
+.
+├── legacy endpoints       # 原有 8 题
+├── v2/
+│   ├── api.php             # 题目列表、上下文、提交验证
+│   ├── bootstrap.php       # SQLite、Session、验证器
+│   ├── data/challenges.php # 18 道题的公开定义
+│   ├── assets/             # 页面、运行时脚本、品牌资源
+│   └── storage/            # 本地运行数据，不提交
+├── ADVANCED_LAB_BLUEPRINT.md
+├── Dockerfile
+└── docker-compose.yml
+```
 
+## 设计原则
 
-**工具脚本**
-  
-[burp自动加解密插件autoDeceder](https://github.com/f0ng/autoDecoder)
+- 服务端权威判定，不能通过修改前端状态直接通关。
+- 每道主线题使用随机 Session 上下文和随机业务载荷。
+- nonce、时间窗、AAD、请求体语义和状态顺序由服务端校验。
+- 反调试只作为分析面的一部分，不制造无法恢复的浏览器死循环。
+- 题目可以通过动态分析，也可以通过理解协议后独立复现。
+- Legacy 题保留入门价值，但不作为新主线的安全实现标准。
 
-[前端JS加密绕过脚本JS-Forward](https://github.com/G-Security-Team/JS-Forward)
+## 研究与使用边界
 
-[JsRpc脚本](https://github.com/jxhczhl/JsRpc)
+本项目只用于本地学习、授权测试和前端协议研究。王者级题目模拟大型业务常见的协议复杂度，不使用真实银行、支付平台或其他机构的私有代码、密钥和数据。
 
-**文章**
+## License
 
-自己写的通关记录：
-
-[加密对抗靶场enctypt-labs通关](https://www.freebuf.com/articles/web/415434.html) 
-
-其他师傅写的文章：
-
-[enctypt-labs靶场通关](https://mp.weixin.qq.com/s/ZgD7qAQAsNlZgLtdZVCoFw)
-
-[渗透测试高级技巧：分析验签与前端加密（一）](https://mp.weixin.qq.com/s?__biz=Mzk0MTM4NzIxMQ==&mid=2247511526&idx=1&sn=c3a661b71ad9e9108b822cec461d34e6&chksm=c2d1d142f5a65854cd0ac07ec38d46c514f472734923fad4ce8bb85579b5a056447abcb545da&scene=21#wechat_redirect)
-
-[渗透测试高级技巧（二）：对抗前端动态密钥与非对称加密防护](https://mp.weixin.qq.com/s/gMbbEV62XR5_QCACQwZnOw)
-
-[保姆级教程--前端加密的对抗（附带靶场）](https://mp.weixin.qq.com/s/_WdQlH6AKma8zYq73Ub7ag)
-
-<img width="1508" alt="image" src="https://github.com/user-attachments/assets/c7c20268-9eb3-4431-b7c1-712710b4ac60">
-
-## 主要分为对称加密、非对称加密和加签的方式
-
-<img width="1400" alt="image" src="https://github.com/user-attachments/assets/cab7b27b-793c-47cc-b7ae-9f318a40492f">
-
-## 列举几个数据包中的图
-### AES
-<img width="1156" alt="image" src="https://github.com/user-attachments/assets/7b97cb86-163c-48ac-b777-bdb7bb7c8ce5">
-
-### 非对称加密
-<img width="1158" alt="image" src="https://github.com/user-attachments/assets/6e812dc0-9f5a-4cd9-b201-c57ff5240a7c">
-
-### AES与RSA
-<img width="1156" alt="image" src="https://github.com/user-attachments/assets/95396225-11d6-4971-8641-70a65275127a">
-
-### 签名的方式
-<img width="1155" alt="image" src="https://github.com/user-attachments/assets/c88b41f4-075b-4eae-8a1c-4b57a27c6370">
-
-### 禁止重放
-<img width="1198" alt="image" src="https://github.com/user-attachments/assets/0a75135e-a197-47f3-bd34-858d27a5c19d">
-
-### ☕ 请作者喝杯冰阔乐
-<img width="300" alt="image" src="https://github.com/user-attachments/assets/a4084580-79c6-403b-a397-3651bcfcc7ce">
-
-
-
-## 🔯 Stars
-[![Stargazers over time](https://starchart.cc/SwagXz/encrypt-labs.svg?variant=adaptive)](https://starchart.cc/SwagXz/encrypt-labs)
-
-
-
+Apache-2.0，详见 [LICENSE](LICENSE)。

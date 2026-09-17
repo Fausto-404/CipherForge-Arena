@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1440" viewBox="0 0 2560 1440">
+  <title>CipherForge Arena Minimal Background</title>
+  <rect width="2560" height="1440" fill="#F2F0E9"/>
+  <g fill="none" stroke="#B9B3A6" stroke-width="2" opacity="0.45">
+    <path d="M118 164 H468"/>
+    <path d="M118 164 V360"/>
+    <rect x="146" y="210" width="212" height="34" rx="2"/>
+    <rect x="146" y="270" width="294" height="34" rx="2"/>
+  </g>
+  <g fill="none" stroke="#B9B3A6" stroke-width="2" opacity="0.38">
+    <rect x="124" y="1058" width="414" height="182" rx="5"/>
+    <path d="M124 1110 H538"/>
+    <circle cx="196" cy="1168" r="12"/>
+    <circle cx="312" cy="1168" r="12"/>
+    <circle cx="428" cy="1168" r="12"/>
+    <path d="M208 1168 H300 M324 1168 H416"/>
+  </g>
+  <g fill="none" stroke="#B9B3A6" stroke-width="2.2" opacity="0.42">
+    <rect x="2018" y="192" width="168" height="62" rx="4"/>
+    <rect x="2240" y="328" width="168" height="62" rx="4"/>
+    <path d="M2186 223 H2258 V328"/>
+    <circle cx="2186" cy="223" r="5" fill="#F2F0E9"/>
+    <circle cx="2258" cy="328" r="5" fill="#F2F0E9"/>
+  </g>
+  <g opacity="0.42">
+    <g fill="#3A3B36">
+      <rect x="2150" y="1152" width="16" height="16"/>
+      <rect x="2178" y="1152" width="16" height="16"/>
+      <rect x="2206" y="1152" width="16" height="16"/>
+      <rect x="2234" y="1152" width="16" height="16"/>
+    </g>
+    <path d="M2150 1196 H2356" stroke="#B9B3A6" stroke-width="2" fill="none"/>
+    <rect x="2288" y="1180" width="24" height="24" fill="#A65B3F" opacity="0.78"/>
+  </g>
+</svg>

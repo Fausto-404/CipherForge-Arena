@@ -1,0 +1,12 @@
+services:
+  cipherforge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /workspace
+    command: php -S 0.0.0.0:8080 -t /workspace
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./:/workspace
+

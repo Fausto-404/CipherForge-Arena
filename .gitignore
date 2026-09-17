@@ -1,0 +1,5 @@
+v2/storage/*.sqlite
+v2/storage/*.pem
+v2/storage/*.log
+.DS_Store
+

@@ -1,0 +1,65 @@
+const api = window.ARENA_API;
+const rankNames = {bronze: '青铜级', silver: '白银级', gold: '黄金级', platinum: '铂金级', diamond: '钻石级', king: '王者级'};
+const $ = (selector) => document.querySelector(selector);
+const enc = new TextEncoder();
+let state = {data: null, current: null, context: null};
+
+const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+const hex = (bytes) => Array.from(new Uint8Array(bytes), (x) => x.toString(16).padStart(2, '0')).join('');
+const unhex = (s) => new Uint8Array((s.match(/.{1,2}/g) || []).map((x) => parseInt(x, 16)));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function digest(text) { return crypto.subtle.digest('SHA-256', enc.encode(text)); }
+async function hmac(seed, text) {
+  const key = await crypto.subtle.importKey('raw', enc.encode(seed), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
+  return hex(await crypto.subtle.sign('HMAC', key, enc.encode(text)));
+}
+async function aesKey(seed, label) {
+  const raw = new Uint8Array(await digest(`${label}|${seed}`));
+  return crypto.subtle.importKey('raw', raw.slice(0, 16), {name: 'AES-CBC'}, false, ['encrypt']);
+}
+async function gcmKey(seed, label) {
+  const raw = new Uint8Array(await digest(`${label}|${seed}`));
+  return crypto.subtle.importKey('raw', raw.slice(0, 16), {name: 'AES-GCM'}, false, ['encrypt']);
+}
+function val(name) { return document.querySelector(`[data-field="${name}"]`)?.value || ''; }
+async function hexMix(text, seed) {
+  const state = new Uint8Array(await digest(seed));
+  const bytes = new TextEncoder().encode(text);
+  return Array.from(bytes, (byte, i) => { const v = byte ^ state[i % state.length] ^ ((i * 17 + 29) & 255); return ((v << 3) | (v >> 5)) & 255; }).map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+async function runChallenge(id, ctx) {
+  const seed = ctx.seed;
+  const a = val('account') || val('username') || val('member') || val('device');
+  const b = val('password') || val('amount') || val('points') || val('serial') || val('resource') || val('operation') || val('scope') || val('code');
+  if (id === 'B01') return {username: val('username'), passwordProof: val('password'), digest: hex(await digest(`${val('username').trim().toLowerCase()}:${seed}:${val('password')}`))};
+  if (id === 'B02') { const iv = crypto.getRandomValues(new Uint8Array(16)); const key = await aesKey(seed, 'B02'); const cipher = await crypto.subtle.encrypt({name: 'AES-CBC', iv}, key, enc.encode(JSON.stringify({account: a, amount: b}))); return {ciphertext: b64(new Uint8Array([...iv, ...new Uint8Array(cipher)]))}; }
+  if (id === 'B03') { const pem = ctx.publicKey.replace(/-----(BEGIN|END) PUBLIC KEY-----/g, '').replace(/\s/g, ''); const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0)); const key = await crypto.subtle.importKey('spki', der, {name: 'RSA-OAEP', hash: 'SHA-1'}, false, ['encrypt']); const cipher = await crypto.subtle.encrypt({name: 'RSA-OAEP'}, key, enc.encode(JSON.stringify({account: a, password: b}))); return {ciphertext: b64(cipher)}; }
+  if (id === 'S01') { const body = {order: val('order'), amount: val('amount')}; const timestamp = Math.floor(Date.now() / 1000).toString(); const nonce = ctx.nonce; const canonical = `POST\n/api/order\n${hex(await digest(JSON.stringify(body)))}\n${timestamp}\n${nonce}`; return {body, timestamp, nonce, signature: await hmac(seed, canonical)}; }
+  if (id === 'S02') { const iv = crypto.getRandomValues(new Uint8Array(12)); const key = await gcmKey(seed, 'S02'); const out = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv, additionalData: enc.encode(`S02|${ctx.nonce}`), tagLength: 128}, key, enc.encode(JSON.stringify({account: a, code: b})))); return {iv: b64(iv), ciphertext: b64(out.slice(0, -16)), tag: b64(out.slice(-16))}; }
+  if (id === 'S03') { const {signQuote} = await import('./challenge-modules/s03.js'); return {symbol: val('symbol'), quantity: val('quantity'), signature: await signQuote(seed, val('symbol'), val('quantity'))}; }
+  if (id === 'G01') return {member: val('member'), points: val('points'), proof: await hmac(seed, `${val('member')}:${val('points')}`)};
+  if (id === 'G02') { const signals = {score: 88, visibility: document.visibilityState, width: innerWidth, start: performance.now()}; signals.integrity = Function.prototype.toString.call(runChallenge).length; return {signals, proof: await hmac(seed, JSON.stringify(signals))}; }
+  if (id === 'G03') return {device: val('device'), serial: val('serial'), token: await hexMix(`${val('device')}|${val('serial')}`, seed)};
+  if (id === 'P01') { const workerCode = `self.onmessage=async(e)=>{const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(e.data.seed),{name:'HMAC',hash:'SHA-256'},false,['sign']);const s=await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(e.data.body));self.postMessage(Array.from(new Uint8Array(s),x=>x.toString(16).padStart(2,'0')).join(''))}`; const worker = new Worker(URL.createObjectURL(new Blob([workerCode], {type: 'text/javascript'}))); const workerProof = await new Promise((resolve) => { worker.onmessage = (e) => {resolve(e.data); worker.terminate();}; worker.postMessage({seed, body: `${a}|${b}`}); }); return {account: a, amount: b, workerProof}; }
+  if (id === 'P02') return {symbol: val('symbol'), tier: val('tier'), token: b64url(await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', enc.encode(seed), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']), enc.encode(`${val('symbol')}|${val('tier')}`)))};
+  if (id === 'P03') { if ('serviceWorker' in navigator) await navigator.serviceWorker.register('./assets/sw.js'); return {account: a, resource: b, viaWorker: true, shadowProof: await hmac(seed, `${a}|${b}`)}; }
+  if (id === 'D01') { const canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 16; const c = canvas.getContext('2d'); c.fillStyle = '#245b55'; c.fillRect(0, 0, 32, 16); const device = {ua: navigator.userAgent, lang: navigator.language, tz: Intl.DateTimeFormat().resolvedOptions().timeZone, width: innerWidth, height: innerHeight, pixel: devicePixelRatio, canvas: canvas.toDataURL(), webgl: 'webgl-' + (document.createElement('canvas').getContext('webgl') ? '1' : '0'), audio: 'audio-context'}; return {device, deviceHash: await digestHex(device)}; }
+  if (id === 'D02') { const events = Array.from({length: 8}, (_, i) => ({type: ['focus','pointermove','pointerdown','pointerup','input','scroll','pointermove','blur'][i], t: i * 37 + 11})); let pow = 0; while (!hex(await digest(`${seed}:${pow}`)).startsWith('000')) pow++; return {events, pow, telemetryProof: await hmac(seed, JSON.stringify(events))}; }
+  if (id === 'D03') { const code = [...val('scope')].reduce((n, c) => n + c.charCodeAt(0), 0) & 255; const first = parseInt(seed.slice(0, 2), 16); return {scopeCode: code, program: [{op: 'push', value: code}, {op: 'push', value: first}, {op: 'xor'}]}; }
+  if (id === 'K01') return {account: a, password: b, stages: ['bootstrap','handshake','login','query'], proof: await hmac(seed, `bootstrap|${a}|login|${b}|query`)};
+  if (id === 'K02') return {account: val('account'), order: val('order'), amount: val('amount'), riskScore: 88, ratchet: await hmac(seed, `device|risk|confirm|${val('account')}|${val('order')}|${val('amount')}`)};
+  if (id === 'K03') return {account: a, operation: b, state: ['arena','auth','risk','business'], businessProof: await hmac(seed, `arena>auth>risk>${a}|${b}`)};
+  throw new Error('unsupported challenge');
+}
+function b64url(bytes) { return btoa(String.fromCharCode(...new Uint8Array(bytes))).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', ''); }
+async function digestHex(object) { return hex(await digest(Object.entries(object).map(([k, v]) => `${k}=${v}`).join('&'))); }
+
+function renderRail() { $('#rank-rail').innerHTML = `<p class="rail-title">CHALLENGE ARCHIVE</p>` + Object.entries(state.data.ranks).map(([rank, items]) => `<button class="rank-tab" data-rank="${rank}"><i class="rank-bar"></i><span class="rank-name">${rankNames[rank]}</span><span class="rank-count">${items.filter((x) => x.solved).length}/3</span></button>`).join(''); document.querySelectorAll('.rank-tab').forEach((b) => b.addEventListener('click', () => renderBoard(b.dataset.rank))); }
+function renderBoard(selected = 'bronze') { const items = state.data.ranks[selected]; $('.challenge-board').innerHTML = `<div class="board-heading"><h2>${rankNames[selected]}</h2><span>3 TASKS / ${items.reduce((n, x) => n + x.score, 0)} PTS</span></div>` + items.map((item) => `<div class="challenge-row ${item.solved ? 'solved' : ''}"><div class="challenge-code">${item.id}</div><div><div class="challenge-title">${item.title}</div><div class="challenge-scene">${item.scene}</div></div><div class="challenge-skill">${item.skills}</div><div class="challenge-score">${item.solved ? '<span class="challenge-status">SOLVED</span>' : ''}${item.score} pts</div><button class="challenge-open" data-id="${item.id}">${item.solved ? '复查任务' : '打开任务'}</button></div>`).join(''); document.querySelectorAll('.challenge-open').forEach((b) => b.addEventListener('click', () => openChallenge(b.dataset.id))); document.querySelectorAll('.rank-tab').forEach((b) => b.classList.toggle('active', b.dataset.rank === selected)); }
+function renderProgress() { const all = Object.values(state.data.ranks).flat(); const done = all.filter((x) => x.solved).length; $('#progress-count').textContent = `${done} / 18`; $('#progress-bar').style.width = `${done / 18 * 100}%`; $('#session-label').textContent = `SESSION ${state.data.sid.slice(0, 8).toUpperCase()}`; }
+function inputForm(item) { return item.inputs.map((name) => `<label class="drawer-label">${name}</label><input class="field" data-field="${name}" value="${name === 'password' ? 'demo-pass-2026' : name === 'amount' ? '128.50' : name === 'points' ? '240' : name === 'quantity' ? '3' : name === 'tier' ? 'pro' : name === 'code' ? '742911' : name === 'operation' ? 'approve-transfer' : name === 'scope' ? 'read:account' : name === 'resource' ? 'statement' : name === 'order' ? 'ORD-2026-0917' : name === 'sku' ? 'SKU-2048' : name === 'serial' ? 'SN-7F12A9' : name === 'deviceLabel' ? 'office-mac' : name === 'member' ? 'member-042' : name === 'symbol' ? 'ALPHA' : 'alice'}">`).join(''); }
+async function openChallenge(id) { const response = await fetch(`${api}?action=context&id=${id}`); const data = await response.json(); state.current = data.challenge; state.context = data.context; $('#drawer-content').innerHTML = `<div class="drawer-kicker">${data.challenge.rank.toUpperCase()} / ${id}</div><h2>${data.challenge.title}</h2><div class="drawer-scene">业务场景：${data.challenge.scene}</div><div class="drawer-summary">${data.challenge.summary}</div><div class="drawer-label">分析标签</div><div>${data.challenge.skills.split(' / ').map((x) => `<span class="tag">${x}</span>`).join('')}</div><form id="challenge-form">${inputForm(data.challenge)}<p class="hint">这是一个可观察的业务动作。点击后会生成一条真实请求 envelope；建议在浏览器 Network、Sources 和运行时上下文中分析它。</p><button class="primary-action" type="submit">执行业务请求</button></form><div id="result" hidden></div>`; $('#drawer').classList.add('open'); $('#drawer').setAttribute('aria-hidden', 'false'); $('#challenge-form').addEventListener('submit', submitChallenge); }
+async function submitChallenge(event) { event.preventDefault(); const result = $('#result'); result.hidden = false; result.className = 'result'; result.innerHTML = '<div class="result-title">正在生成请求…</div>'; try { const payload = await runChallenge(state.current.id, state.context); const response = await fetch(`${api}?action=submit`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: state.current.id, payload})}); const data = await response.json(); result.className = `result ${data.ok ? 'ok' : 'bad'}`; result.innerHTML = `<div class="result-title">${data.ok ? '验证通过' : '验证未通过'}</div><div class="result-detail">${data.detail || data.error} ${data.ok ? `+${data.score} pts` : ''}</div><pre class="wire">${JSON.stringify(payload, null, 2)}</pre>`; if (data.ok) { const fresh = await (await fetch(`${api}?action=list`)).json(); state.data = fresh; renderRail(); renderBoard(state.current.rank); renderProgress(); } } catch (error) { result.className = 'result bad'; result.innerHTML = `<div class="result-title">请求生成失败</div><div class="result-detail">${error.message}</div>`; } }
+async function init() { state.data = await (await fetch(`${api}?action=list`)).json(); renderRail(); renderBoard('bronze'); renderProgress(); $('#drawer-close').addEventListener('click', () => { $('#drawer').classList.remove('open'); $('#drawer').setAttribute('aria-hidden', 'true'); }); }
+init();
