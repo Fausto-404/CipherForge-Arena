@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>CipherForge Arena Icon</title>
+  <g fill="none" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M238 234 H640 V346 H404 V678 H640 V790 H238 Z" stroke="#20211E" stroke-width="88"/>
+    <path d="M764 234 H520 V470 H718 M520 470 V790 H764" stroke="#3A3B36" stroke-width="88"/>
+  </g>
+  <g>
+    <rect x="482" y="474" width="64" height="46" rx="2" fill="#A65B3F"/>
+    <rect x="495" y="487" width="38" height="20" rx="1" fill="white" opacity="0.92"/>
+  </g>
+</svg>

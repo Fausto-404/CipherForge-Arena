@@ -20,7 +20,7 @@ button { cursor: pointer; }
 .topbar { height: 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 42px; border-bottom: 1px solid var(--line); background: rgba(251,250,247,.92); }
 .brand { display: flex; gap: 10px; align-items: center; font-weight: 700; letter-spacing: .01em; }
 .brand small { color: var(--muted); font: 11px var(--mono); font-weight: 500; margin-left: 2px; }
-.brand-mark { display: grid; place-items: center; width: 28px; height: 28px; color: #fff; background: var(--accent); font: 11px var(--mono); letter-spacing: -.05em; }
+.brand-icon { display: block; width: 30px; height: 30px; object-fit: contain; }
 .top-meta { display: flex; align-items: center; gap: 10px; color: var(--muted); font: 12px var(--mono); }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #4e9a6a; }
 .layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); min-height: calc(100vh - 64px); }

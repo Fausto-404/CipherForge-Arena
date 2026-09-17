@@ -68,6 +68,8 @@ docker compose up --build
 └── docker-compose.yml
 ```
 
+品牌资源位于 `v2/assets/brand/`：`cipherforge-arena-icon.svg` 为透明 Icon，`cipherforge-arena-background.svg` 为页面背景。
+
 ## 设计原则
 
 - 服务端权威判定，不能通过修改前端状态直接通关。

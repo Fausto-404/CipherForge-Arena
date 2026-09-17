@@ -9,11 +9,12 @@ require __DIR__ . '/bootstrap.php';
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>CipherForge Arena / advanced protocol lab</title>
+  <link rel="icon" href="assets/brand/cipherforge-arena-icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/style.css?v=<?= rawurlencode(ARENA_VERSION) ?>">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="brand-mark">CF</span><span>CipherForge Arena</span><small>advanced protocol lab</small></div>
+    <div class="brand"><img class="brand-icon" src="assets/brand/cipherforge-arena-icon.svg" alt="CipherForge Arena"><span>CipherForge Arena</span><small>advanced protocol lab</small></div>
     <div class="top-meta"><span id="session-label">SESSION —</span><span class="status-dot"></span><span>本地训练环境</span></div>
   </header>
   <main class="layout">
