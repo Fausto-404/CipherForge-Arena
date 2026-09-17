@@ -14,7 +14,7 @@ return [
     'gold' => [
         ['id'=>'G01','title'=>'扁平迷宫','scene'=>'积分兑换','summary'=>'从诱饵算法和扁平控制流中分离真实请求路径。','skills'=>'control-flow flattening / decoy','score'=>300,'inputs'=>['member','points']],
         ['id'=>'G02','title'=>'镜中调试器','scene'=>'敏感操作','summary'=>'理解多信号运行时检测，同时保持业务链正常完成。','skills'=>'integrity / timing / telemetry','score'=>300,'inputs'=>['account','action']],
-        ['id'=>'G03','title'=>'魔改轮函数','scene'=>'设备注册码','summary'=>'通过差分输入输出还原非标准轮函数。','skills'=>'custom rounds / endian / differential','score'=>300,'inputs'=>['device','serial']],
+        ['id'=>'G03','title'=>'魔改轮函数','scene'=>'设备注册码','summary'=>'还原动态轮密钥、CBC 链接和完整性标签，生成服务端可解封的自定义密文。','skills'=>'custom cipher / CBC chain / differential','score'=>300,'inputs'=>['device','serial']],
     ],
     'platinum' => [
         ['id'=>'P01','title'=>'Worker 密封舱','scene'=>'交易口令','summary'=>'追踪主线程与 Worker 之间的 envelope 和序号。','skills'=>'Dedicated Worker / transferable / async','score'=>450,'inputs'=>['account','amount']],
@@ -29,7 +29,6 @@ return [
     'king' => [
         ['id'=>'K01','title'=>'零售银行登录链','scene'=>'金融登录演练','summary'=>'完成 bootstrap、密钥协商、登录和登录后查询四阶段。','skills'=>'ECDH-like handshake / Worker / ratchet','score'=>1000,'inputs'=>['account','password']],
         ['id'=>'K02','title'=>'风控 SDK','scene'=>'支付确认','summary'=>'连续完成设备证明、风控预检和密钥轮转。','skills'=>'risk score / CBOR-like envelope / ratchet','score'=>1000,'inputs'=>['account','order','amount']],
-        ['id'=>'K03','title'=>'王者终局：多域状态机','scene'=>'跨域高风险业务','summary'=>'还原多阶段状态机和业务签名，随机载荷下仍需稳定工作。','skills'=>'state machine / VM / multi-stage proof','score'=>1000,'inputs'=>['account','operation']],
+        ['id'=>'K03','title'=>'王者终局：多域状态机','scene'=>'跨域高风险业务','summary'=>'从动态模块中还原自定义加密 envelope，并通过 Go Runtime 完成解封、标签和状态链校验。','skills'=>'custom cipher / runtime decrypt / state machine','score'=>1000,'inputs'=>['account','operation']],
     ],
 ];
-

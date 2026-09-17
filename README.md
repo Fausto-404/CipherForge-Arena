@@ -11,11 +11,13 @@ CipherForge Arena 是一个面向 JavaScript 逆向、前端加密分析和浏�
 - ESM 动态模块、控制流混淆和运行时完整性检测；
 - Dedicated Worker、WASM、Service Worker 和 CacheStorage；
 - 设备摘要、行为遥测、PoW、字节码 VM；
-- 多阶段密钥状态机、密钥轮转和综合业务协议。
+- 多阶段密钥状态机、密钥轮转和自定义密文 envelope。
 
 ## 当前版本
 
-主线版本：`2.3.0-dev`
+主线版本：`2.4.0-dev`
+
+2.4 开始，黄金/王者级不再只验证 HMAC 或业务字段：G03/K03 使用动态轮密钥、非线性表、16 轮变换、CBC 链接、填充和 tag 的自定义密文 envelope；王者级由独立 Go Runtime 解封后校验。G02/K01/K02/K03 同时加入脚本完整性、调试器停顿、窗口特征和原生函数完整性检测。
 
 共 6 个段位、18 道主线题：
 

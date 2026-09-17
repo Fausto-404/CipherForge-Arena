@@ -22,7 +22,7 @@ require __DIR__ . '/bootstrap.php';
     <section class="workspace">
       <div class="intro-row">
         <div>
-          <p class="eyebrow">FRONTEND SECURITY LAB / 2.3 DEV</p>
+          <p class="eyebrow">FRONTEND SECURITY LAB / 2.4 DEV</p>
           <h1>逆向训练档案</h1>
           <p class="lede">从可见的密码学到多阶段浏览器协议。每个任务都由真实请求、运行时状态和服务端校验共同组成。</p>
         </div>

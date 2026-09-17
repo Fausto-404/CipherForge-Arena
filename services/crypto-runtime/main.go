@@ -1,19 +1,23 @@
 package main
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 )
 
 type verifyRequest struct {
 	Challenge string                 `json:"challenge"`
 	Seed      string                 `json:"seed"`
 	Nonce     string                 `json:"nonce"`
+	AssetHash string                 `json:"assetHash"`
 	Payload   map[string]interface{} `json:"payload"`
 }
 
@@ -35,6 +39,104 @@ func numberValue(payload map[string]interface{}, key string) float64 {
 func boolValue(payload map[string]interface{}, key string) bool {
 	value, _ := payload[key].(bool)
 	return value
+}
+
+func rotate(value byte, shift uint) byte {
+	return (value << shift) | (value >> (8 - shift))
+}
+
+func guardMessage(guard map[string]interface{}) string {
+	consoleGuard := "0"
+	if boolValue(guard, "consoleGuard") {
+		consoleGuard = "1"
+	}
+	return stringValue(guard, "sourceHash") + "|" +
+		strconv.Itoa(int(numberValue(guard, "score"))) + "|" +
+		strconv.Itoa(int(numberValue(guard, "debuggerDelta"))) + "|" +
+		strconv.Itoa(int(numberValue(guard, "viewportGap"))) + "|" +
+		stringValue(guard, "visibility") + "|" + consoleGuard
+}
+
+func verifyGuard(request verifyRequest) bool {
+	guard, ok := request.Payload["guard"].(map[string]interface{})
+	if !ok || request.AssetHash == "" {
+		return false
+	}
+	return stringValue(guard, "sourceHash") == request.AssetHash &&
+		numberValue(guard, "score") >= 60 &&
+		numberValue(guard, "debuggerDelta") <= 120 &&
+		numberValue(guard, "viewportGap") <= 280 &&
+		stringValue(guard, "visibility") == "visible" &&
+		boolValue(guard, "consoleGuard") &&
+		hmacHex(request.Seed, guardMessage(guard)) == stringValue(request.Payload, "guardProof")
+}
+
+func cfxUnseal(envelope, seed, nonce string) (string, bool) {
+	raw, err := base64.RawURLEncoding.DecodeString(envelope)
+	if err != nil || len(raw) < 4+12+16+12 || string(raw[:4]) != "CFX1" {
+		return "", false
+	}
+	nonceBytes, err := hex.DecodeString(nonce)
+	if err != nil || len(nonceBytes) != 12 || !bytes.Equal(nonceBytes, raw[4:16]) {
+		return "", false
+	}
+	key := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|cfx/1", seed, nonce)))
+	box := make([]byte, 256)
+	for i := range box {
+		box[i] = key[(i*13)%len(key)] ^ byte((i*29+17)&255)
+	}
+	cipherLength := len(raw) - 4 - 12 - 12
+	if cipherLength < 16 || cipherLength%16 != 0 {
+		return "", false
+	}
+	body := raw[:4+12+cipherLength]
+	tagDigest := sha256.Sum256(append(key[:], body...))
+	if !hmac.Equal(tagDigest[:12], raw[len(raw)-12:]) {
+		return "", false
+	}
+
+	plain := make([]byte, 0, cipherLength)
+	previous := make([]byte, 16)
+	for offset := 0; offset < cipherLength; offset += 16 {
+		block := raw[16+offset : 16+offset+16]
+		left := append([]byte(nil), block[:8]...)
+		right := append([]byte(nil), block[8:]...)
+		for round := 15; round >= 0; round-- {
+			oldRight := append([]byte(nil), left...)
+			oldLeft := make([]byte, 8)
+			for i := 0; i < 8; i++ {
+				a := key[(round*7+i)%len(key)]
+				b := key[(round*11+i*3)%len(key)]
+				tweak := byte(((round + 1) * (i + 3)) & 255)
+				value := byte((int(oldRight[i]) + int(a) + int(tweak)) & 255)
+				mixed := rotate(box[value], uint((round+i)%7+1)) ^ b
+				oldLeft[i] = right[i] ^ mixed
+			}
+			left, right = oldLeft, oldRight
+		}
+		decoded := make([]byte, 16)
+		for i := 0; i < 16; i++ {
+			if i < 8 {
+				decoded[i] = left[i] ^ previous[i]
+			} else {
+				decoded[i] = right[i-8] ^ previous[i]
+			}
+		}
+		plain = append(plain, decoded...)
+		copy(previous, block)
+	}
+
+	padding := int(plain[len(plain)-1])
+	if padding < 1 || padding > 16 || !bytes.Equal(plain[len(plain)-padding:], bytes.Repeat([]byte{byte(padding)}, padding)) {
+		return "", false
+	}
+	plain = plain[:len(plain)-padding]
+	if len(plain) < 6 || string(plain[:4]) != "CFX1" {
+		return "", false
+	}
+	length := int(plain[4])<<8 | int(plain[5])
+	value := plain[6:]
+	return string(value), len(value) == length
 }
 
 func hmacHex(seed, message string) string {
@@ -74,15 +176,16 @@ func verify(request verifyRequest) (bool, string) {
 		return boolValue(payload, "viaWorker") && hmacHex(request.Seed, body) == stringValue(payload, "shadowProof"), "service worker rewritten request"
 	case "K01":
 		body := "bootstrap|" + stringValue(payload, "account") + "|login|" + stringValue(payload, "password") + "|query"
-		return sameStrings(payload["stages"], []string{"bootstrap", "handshake", "login", "query"}) && hmacHex(request.Seed, body) == stringValue(payload, "proof"), "four-stage login chain"
+		return verifyGuard(request) && sameStrings(payload["stages"], []string{"bootstrap", "handshake", "login", "query"}) && hmacHex(request.Seed, body) == stringValue(payload, "proof"), "four-stage login chain"
 	case "K02":
 		body := stringValue(payload, "account") + "|" + stringValue(payload, "order") + "|" + stringValue(payload, "amount")
 		expected := hmacHex(request.Seed, "device|risk|confirm|"+body)
-		return numberValue(payload, "riskScore") >= 70 && expected == stringValue(payload, "ratchet"), "risk sdk ratchet"
+		return verifyGuard(request) && numberValue(payload, "riskScore") >= 70 && expected == stringValue(payload, "ratchet"), "risk sdk ratchet"
 	case "K03":
 		body := stringValue(payload, "account") + "|" + stringValue(payload, "operation")
 		expected := hmacHex(request.Seed, "arena>auth>risk>"+body)
-		return sameStrings(payload["state"], []string{"arena", "auth", "risk", "business"}) && expected == stringValue(payload, "businessProof"), "multi-domain state machine"
+		opened, openedOK := cfxUnseal(stringValue(payload, "envelope"), request.Seed, request.Nonce)
+		return verifyGuard(request) && sameStrings(payload["state"], []string{"arena", "auth", "risk", "business"}) && expected == stringValue(payload, "businessProof") && openedOK && opened == body, "multi-domain encrypted state machine"
 	default:
 		return false, "unsupported runtime challenge"
 	}

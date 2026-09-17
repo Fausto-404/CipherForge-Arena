@@ -101,7 +101,7 @@
 #### G03 魔改轮函数
 
 - 场景：设备注册码。
-- 算法：自定义 Feistel/TEA-like 轮函数，服务端下发轮常量，混合大小端和自定义编码。
+- 算法：动态轮密钥、16 轮 Feistel-like 变换、CBC 链接、长度帧、PKCS#7 类填充和截断完整性标签。
 - 障碍：无法直接套 CryptoJS；存在外形相似但参数错误的诱饵实现。
 - 通关要求：通过输入输出差分还原算法，处理随机测试向量。
 
@@ -172,8 +172,8 @@
 
 - 场景：跨域统一身份与高风险业务确认。
 - 域：`arena.local`、`auth.arena.local`、`risk.arena.local`。
-- 链路：跨域 iframe 握手 -> 服务端证明 -> ECDH -> WASM VM 业务签名 -> Service Worker 改写 -> 密钥轮转。
-- 障碍：按构建 seed 生成不同模块 ID、常量布局、诱饵分支和字段别名；COOP/COEP、CSP、完整性校验、延迟且模糊的错误反馈。
+- 链路：动态模块入口 -> 自定义密文 envelope -> Go Runtime 解封 -> nonce/tag/明文校验 -> 状态机确认。
+- 障碍：按 Session seed 派生轮密钥，常量表编码、动态导出名、反调试遥测和服务端独立解封；错误只返回有限业务结果。
 - 通关要求：完成 bootstrap、attestation、key exchange、business 四阶段，并对随机业务载荷稳定签名。
 - 目标：难点是还原完整系统，不是只找到一个函数。
 
@@ -200,7 +200,7 @@
 - Rust/wasm-pack 或 AssemblyScript：真实题包可用于 P02、K03 的 WASM 模块。
 - Docker Compose：启动 PHP Web 与 Go Crypto Runtime；后续生产化可在前面增加 Nginx，在状态层替换为 MySQL/Redis。
 
-当前实现采用“PHP 控制面 + Go 密码运行时”的渐进式拆分：主线题由 PHP 编排，铂金/王者级通过 `ARENA_RUNTIME_URL` 转发到 Go；未配置该变量时自动回退 PHP 校验器，方便本地开发和题目调试。
+当前实现采用“PHP 控制面 + Go 密码运行时”的渐进式拆分：主线题由 PHP 编排，铂金/王者级通过 `ARENA_RUNTIME_URL` 转发到 Go；未配置该变量时自动回退 PHP 校验器，方便本地开发和题目调试。G03/K03 的自定义密文算法在 PHP 与 Go 中各有一份服务端实现，浏览器必须走真实 JavaScript 加密入口。
 
 ### 推荐目录
 
