@@ -50,11 +50,22 @@ func guardMessage(guard map[string]interface{}) string {
 	if boolValue(guard, "consoleGuard") {
 		consoleGuard = "1"
 	}
-	return stringValue(guard, "sourceHash") + "|" +
+	toStringGuard := "0"
+	if boolValue(guard, "toStringGuard") {
+		toStringGuard = "1"
+	}
+	stackGuard := "0"
+	if boolValue(guard, "stackGuard") {
+		stackGuard = "1"
+	}
+	return strconv.Itoa(int(numberValue(guard, "probeVersion"))) + "|" +
+		stringValue(guard, "probeToken") + "|" +
+		stringValue(guard, "sourceHash") + "|" +
 		strconv.Itoa(int(numberValue(guard, "score"))) + "|" +
 		strconv.Itoa(int(numberValue(guard, "debuggerDelta"))) + "|" +
+		strconv.Itoa(int(numberValue(guard, "timingVariance"))) + "|" +
 		strconv.Itoa(int(numberValue(guard, "viewportGap"))) + "|" +
-		stringValue(guard, "visibility") + "|" + consoleGuard
+		stringValue(guard, "visibility") + "|" + consoleGuard + "|" + toStringGuard + "|" + stackGuard
 }
 
 func verifyGuard(request verifyRequest) bool {
@@ -62,28 +73,41 @@ func verifyGuard(request verifyRequest) bool {
 	if !ok || request.AssetHash == "" {
 		return false
 	}
+	probeDigest := sha256.Sum256([]byte(request.Nonce + "|guard/2"))
+	probeToken := hex.EncodeToString(probeDigest[:])[:16]
 	return stringValue(guard, "sourceHash") == request.AssetHash &&
+		int(numberValue(guard, "probeVersion")) == 2 &&
+		stringValue(guard, "probeToken") == probeToken &&
 		numberValue(guard, "score") >= 60 &&
 		numberValue(guard, "debuggerDelta") <= 120 &&
+		numberValue(guard, "timingVariance") <= 60 &&
 		numberValue(guard, "viewportGap") <= 280 &&
 		stringValue(guard, "visibility") == "visible" &&
 		boolValue(guard, "consoleGuard") &&
+		boolValue(guard, "toStringGuard") &&
+		boolValue(guard, "stackGuard") &&
 		hmacHex(request.Seed, guardMessage(guard)) == stringValue(request.Payload, "guardProof")
 }
 
 func cfxUnseal(envelope, seed, nonce string) (string, bool) {
 	raw, err := base64.RawURLEncoding.DecodeString(envelope)
-	if err != nil || len(raw) < 4+12+16+12 || string(raw[:4]) != "CFX1" {
+	if err != nil || len(raw) < 4+12+16+12 || string(raw[:4]) != "CFX2" {
 		return "", false
 	}
 	nonceBytes, err := hex.DecodeString(nonce)
 	if err != nil || len(nonceBytes) != 12 || !bytes.Equal(nonceBytes, raw[4:16]) {
 		return "", false
 	}
-	key := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|cfx/1", seed, nonce)))
+	key := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|cfx/2", seed, nonce)))
+	roundCount := 12 + int(key[0]&7)
+	route := make([]int, roundCount)
+	for round := range route {
+		route[round] = int((key[(round*5+3)%len(key)] ^ byte((round*23+41)&255)) & 31)
+	}
 	box := make([]byte, 256)
 	for i := range box {
-		box[i] = key[(i*13)%len(key)] ^ byte((i*29+17)&255)
+		pivot := route[i%roundCount]
+		box[i] = key[(i*13+pivot)%len(key)] ^ byte((i*29+17+pivot*7)&255)
 	}
 	cipherLength := len(raw) - 4 - 12 - 12
 	if cipherLength < 16 || cipherLength%16 != 0 {
@@ -101,13 +125,14 @@ func cfxUnseal(envelope, seed, nonce string) (string, bool) {
 		block := raw[16+offset : 16+offset+16]
 		left := append([]byte(nil), block[:8]...)
 		right := append([]byte(nil), block[8:]...)
-		for round := 15; round >= 0; round-- {
+		for round := roundCount - 1; round >= 0; round-- {
 			oldRight := append([]byte(nil), left...)
 			oldLeft := make([]byte, 8)
+			slot := route[round]
 			for i := 0; i < 8; i++ {
-				a := key[(round*7+i)%len(key)]
-				b := key[(round*11+i*3)%len(key)]
-				tweak := byte(((round + 1) * (i + 3)) & 255)
+				a := key[(slot+i*3+round)%len(key)]
+				b := key[(slot*5+i*7+round*3)%len(key)]
+				tweak := byte((slot + (round+1)*(i+3) + int(key[(round+i)%len(key)])) & 255)
 				value := byte((int(oldRight[i]) + int(a) + int(tweak)) & 255)
 				mixed := rotate(box[value], uint((round+i)%7+1)) ^ b
 				oldLeft[i] = right[i] ^ mixed
@@ -131,7 +156,7 @@ func cfxUnseal(envelope, seed, nonce string) (string, bool) {
 		return "", false
 	}
 	plain = plain[:len(plain)-padding]
-	if len(plain) < 6 || string(plain[:4]) != "CFX1" {
+	if len(plain) < 6 || string(plain[:4]) != "CFX2" {
 		return "", false
 	}
 	length := int(plain[4])<<8 | int(plain[5])

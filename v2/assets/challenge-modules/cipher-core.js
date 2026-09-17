@@ -1,5 +1,5 @@
 const decode = (value) => new TextDecoder().decode(new Uint8Array(value.match(/.{2}/g).map((x) => parseInt(x, 16))));
-const table = [decode('6366782f31'), decode('43465831'), 16, 8, 12, 255];
+const table = [decode('6366782f32'), decode('43465832'), 16, 8, 12, 255];
 const encoder = new TextEncoder();
 
 function rot(value, shift) {
@@ -11,26 +11,33 @@ function xorBlock(left, right) {
 }
 
 function makeBox(key) {
-  return Uint8Array.from({length: 256}, (_, index) => key[(index * 13) % key.length] ^ ((index * 29 + 17) & table[5]));
+  const rounds = 12 + (key[0] & 7);
+  const route = Uint8Array.from({length: rounds}, (_, round) => (key[(round * 5 + 3) % key.length] ^ ((round * 23 + 41) & table[5])) & 31);
+  const box = Uint8Array.from({length: 256}, (_, index) => {
+    const pivot = route[index % route.length];
+    return key[(index * 13 + pivot) % key.length] ^ ((index * 29 + 17 + pivot * 7) & table[5]);
+  });
+  return {box, route};
 }
 
-function blockRound(left, right, key, box, round) {
+function blockRound(left, right, key, plan, round) {
   const nextRight = new Uint8Array(table[3]);
+  const slot = plan.route[round];
   for (let i = 0; i < table[3]; i += 1) {
-    const a = key[(round * 7 + i) % key.length];
-    const b = key[(round * 11 + i * 3) % key.length];
-    const tweak = ((round + 1) * (i + 3)) & table[5];
-    const nonlinear = box[(right[i] + a + tweak) & table[5]];
+    const a = key[(slot + i * 3 + round) % key.length];
+    const b = key[(slot * 5 + i * 7 + round * 3) % key.length];
+    const tweak = (slot + (round + 1) * (i + 3) + key[(round + i) % key.length]) & table[5];
+    const nonlinear = plan.box[(right[i] + a + tweak) & table[5]];
     nextRight[i] = left[i] ^ (rot(nonlinear, (round + i) % 7 + 1) ^ b);
   }
   return [right, nextRight];
 }
 
 function blockSeal(block, key) {
-  const box = makeBox(key);
+  const plan = makeBox(key);
   let left = block.slice(0, table[3]);
   let right = block.slice(table[3]);
-  for (let round = 0; round < table[1].length * 2 + table[2] - 8; round += 1) [left, right] = blockRound(left, right, key, box, round);
+  for (let round = 0; round < plan.route.length; round += 1) [left, right] = blockRound(left, right, key, plan, round);
   return new Uint8Array([...left, ...right]);
 }
 
@@ -62,7 +69,7 @@ async function _seal(plainText, seed, nonce) {
   const key = new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(`${seed}|${nonce}|${table[0]}`)));
   const nonceBytes = hexBytes(nonce);
   const plain = encoder.encode(plainText);
-  const framed = new Uint8Array([0x43, 0x46, 0x58, 0x31, plain.length >>> 8, plain.length & 255, ...plain]);
+  const framed = new Uint8Array([0x43, 0x46, 0x58, 0x32, plain.length >>> 8, plain.length & 255, ...plain]);
   const padded = pad(framed);
   const ciphertext = [];
   let previous = new Uint8Array(table[2]);
@@ -71,7 +78,7 @@ async function _seal(plainText, seed, nonce) {
     ciphertext.push(sealed);
     previous = sealed;
   }
-  const body = concat(new Uint8Array([0x43, 0x46, 0x58, 0x31]), nonceBytes, ...ciphertext);
+  const body = concat(new Uint8Array([0x43, 0x46, 0x58, 0x32]), nonceBytes, ...ciphertext);
   const tag = new Uint8Array(await crypto.subtle.digest('SHA-256', concat(key, body)));
   return b64url(concat(body, tag.slice(0, table[4])));
 }

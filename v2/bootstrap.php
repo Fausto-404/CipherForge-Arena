@@ -186,36 +186,53 @@ function arena_runtime_verify(string $id, array $payload, array $ctx): ?array
 function arena_guard_message(array $signals): string
 {
     return implode('|', [
+        (string)(int)($signals['probeVersion'] ?? 0),
+        (string)($signals['probeToken'] ?? ''),
         (string)($signals['sourceHash'] ?? ''),
         (string)(int)($signals['score'] ?? 0),
         (string)(int)($signals['debuggerDelta'] ?? 0),
+        (string)(int)($signals['timingVariance'] ?? 0),
         (string)(int)($signals['viewportGap'] ?? 0),
         (string)($signals['visibility'] ?? ''),
         !empty($signals['consoleGuard']) ? '1' : '0',
+        !empty($signals['toStringGuard']) ? '1' : '0',
+        !empty($signals['stackGuard']) ? '1' : '0',
     ]);
 }
 
-function arena_guard_valid(array $signals): bool
+function arena_guard_valid(array $signals, string $nonce): bool
 {
     $assetHash = hash_file('sha256', ARENA_ROOT . '/assets/app.js');
+    $probeToken = substr(hash('sha256', $nonce . '|guard/2'), 0, 16);
     return is_string($assetHash)
+        && (int)($signals['probeVersion'] ?? 0) === 2
+        && hash_equals($probeToken, (string)($signals['probeToken'] ?? ''))
         && hash_equals($assetHash, (string)($signals['sourceHash'] ?? ''))
         && (int)($signals['score'] ?? 0) >= 60
         && (int)($signals['debuggerDelta'] ?? 9999) <= 120
+        && (int)($signals['timingVariance'] ?? 9999) <= 60
         && (int)($signals['viewportGap'] ?? 9999) <= 280
         && (string)($signals['visibility'] ?? '') === 'visible'
-        && !empty($signals['consoleGuard']);
+        && !empty($signals['consoleGuard'])
+        && !empty($signals['toStringGuard'])
+        && !empty($signals['stackGuard']);
 }
 
 function arena_cfx_unseal(string $envelope, string $seed, string $nonce): string|false
 {
     $raw = base64_decode(strtr($envelope, '-_', '+/'), true);
-    if ($raw === false || strlen($raw) < 4 + 12 + 16 + 12 || substr($raw, 0, 4) !== 'CFX1') return false;
+    if ($raw === false || strlen($raw) < 4 + 12 + 16 + 12 || substr($raw, 0, 4) !== 'CFX2') return false;
     $nonceBytes = hex2bin($nonce);
     if ($nonceBytes === false || !hash_equals($nonceBytes, substr($raw, 4, 12))) return false;
-    $key = hash('sha256', $seed . '|' . $nonce . '|cfx/1', true);
+    $key = hash('sha256', $seed . '|' . $nonce . '|cfx/2', true);
+    $roundCount = 12 + (ord($key[0]) & 7);
+    $route = [];
+    for ($round = 0; $round < $roundCount; $round++) $route[$round] = (ord($key[($round * 5 + 3) % 32]) ^ (($round * 23 + 41) & 255)) & 31;
     $box = [];
-    for ($i = 0; $i < 256; $i++) $box[$i] = ord($key[($i * 13) % 32]) ^ (($i * 29 + 17) & 255);
+    for ($i = 0; $i < 256; $i++) {
+        $pivot = $route[$i % $roundCount];
+        $box[$i] = ord($key[($i * 13 + $pivot) % 32]) ^ (($i * 29 + 17 + $pivot * 7) & 255);
+    }
     $cipherLength = strlen($raw) - 4 - 12 - 12;
     $body = substr($raw, 0, 4 + 12 + $cipherLength);
     $tag = substr($raw, -12);
@@ -229,13 +246,14 @@ function arena_cfx_unseal(string $envelope, string $seed, string $nonce): string
         $block = substr($ciphertext, $offset, 16);
         $left = array_values(unpack('C*', substr($block, 0, 8)));
         $right = array_values(unpack('C*', substr($block, 8, 8)));
-        for ($round = 15; $round >= 0; $round--) {
+        for ($round = $roundCount - 1; $round >= 0; $round--) {
             $oldRight = $left;
             $oldLeft = [];
+            $slot = $route[$round];
             for ($i = 0; $i < 8; $i++) {
-                $a = ord($key[($round * 7 + $i) % 32]);
-                $b = ord($key[($round * 11 + $i * 3) % 32]);
-                $tweak = (($round + 1) * ($i + 3)) & 255;
+                $a = ord($key[($slot + $i * 3 + $round) % 32]);
+                $b = ord($key[($slot * 5 + $i * 7 + $round * 3) % 32]);
+                $tweak = ($slot + ($round + 1) * ($i + 3) + ord($key[($round + $i) % 32])) & 255;
                 $value = ($oldRight[$i] + $a + $tweak) & 255;
                 $shift = ($round + $i) % 7 + 1;
                 $mixed = (($box[$value] << $shift) | ($box[$value] >> (8 - $shift))) & 255;
@@ -253,7 +271,7 @@ function arena_cfx_unseal(string $envelope, string $seed, string $nonce): string
     $padding = ord($plain[strlen($plain) - 1]);
     if ($padding < 1 || $padding > 16 || substr($plain, -$padding) !== str_repeat(chr($padding), $padding)) return false;
     $plain = substr($plain, 0, -$padding);
-    if (substr($plain, 0, 4) !== 'CFX1') return false;
+    if (substr($plain, 0, 4) !== 'CFX2') return false;
     $length = (ord($plain[4]) << 8) | ord($plain[5]);
     $value = substr($plain, 6);
     return strlen($value) === $length ? $value : false;
@@ -314,17 +332,27 @@ function arena_verify(string $id, array $payload, array $ctx): array
         case 'S03':
             return [hash_equals(hash_hmac('sha256', (string)($payload['symbol'] ?? '') . '|' . (string)($payload['quantity'] ?? ''), $seed), (string)($payload['signature'] ?? '')), 'dynamic module signature'];
         case 'G01':
-            return [hash_equals(hash_hmac('sha256', (string)($payload['member'] ?? '') . ':' . (string)($payload['points'] ?? ''), $seed), (string)($payload['proof'] ?? '')), 'flattened flow proof'];
+            $guard = is_array($payload['guard'] ?? null) ? $payload['guard'] : [];
+            $guardProof = hash_hmac('sha256', arena_guard_message($guard), $seed);
+            $valid = hash_equals(hash_hmac('sha256', (string)($payload['member'] ?? '') . ':' . (string)($payload['points'] ?? ''), $seed), (string)($payload['proof'] ?? ''))
+                && arena_guard_valid($guard, $ctx['nonce'])
+                && hash_equals($guardProof, (string)($payload['guardProof'] ?? ''));
+            return [$valid, $valid ? 'flattened flow proof' : 'flattened flow guard rejected'];
         case 'G02':
             $signals = $payload['signals'] ?? [];
             $score = (int)($signals['score'] ?? 0);
             $proof = hash_hmac('sha256', arena_guard_message(is_array($signals) ? $signals : []), $seed);
-            $valid = is_array($signals) && arena_guard_valid($signals) && $score >= 60 && hash_equals($proof, (string)($payload['proof'] ?? ''));
+            $valid = is_array($signals) && arena_guard_valid($signals, $ctx['nonce']) && $score >= 60 && hash_equals($proof, (string)($payload['proof'] ?? ''));
             return [$valid, $valid ? 'runtime integrity telemetry' : 'runtime guard rejected'];
         case 'G03':
             $plain = arena_cfx_unseal((string)($payload['ciphertext'] ?? ''), $seed, $ctx['nonce']);
             $expected = (string)($payload['device'] ?? '') . '|' . (string)($payload['serial'] ?? '');
-            return [$plain !== false && hash_equals($expected, $plain), 'custom round function envelope'];
+            $guard = is_array($payload['guard'] ?? null) ? $payload['guard'] : [];
+            $guardProof = hash_hmac('sha256', arena_guard_message($guard), $seed);
+            $valid = $plain !== false && hash_equals($expected, $plain)
+                && arena_guard_valid($guard, $ctx['nonce'])
+                && hash_equals($guardProof, (string)($payload['guardProof'] ?? ''));
+            return [$valid, $valid ? 'custom round function envelope' : 'custom cipher guard rejected'];
         case 'P01':
             return [hash_equals(hash_hmac('sha256', (string)($payload['account'] ?? '') . '|' . (string)($payload['amount'] ?? ''), $seed), (string)($payload['workerProof'] ?? '')), 'worker envelope'];
         case 'P02':
@@ -367,7 +395,7 @@ function arena_verify(string $id, array $payload, array $ctx): array
             $valid = hash_equals($expected, (string)($payload['businessProof'] ?? ''))
                 && ($payload['state'] ?? []) === ['arena','auth','risk','business']
                 && $envelope !== false && hash_equals($body, $envelope)
-                && arena_guard_valid($guard) && hash_equals($guardProof, (string)($payload['guardProof'] ?? ''));
+                && arena_guard_valid($guard, $ctx['nonce']) && hash_equals($guardProof, (string)($payload['guardProof'] ?? ''));
             return [$valid, $valid ? 'multi-domain encrypted state machine' : 'state machine rejected'];
     }
     return [false, 'unknown challenge'];
