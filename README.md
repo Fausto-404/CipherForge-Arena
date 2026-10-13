@@ -2,7 +2,7 @@
 
 **密钥工场 · 前端协议对抗靶场**
 
-CipherForge Arena 是一个用于学习 JavaScript 逆向、前端密码分析与浏览器运行时协议研究的本地训练靶场。项目提供 18 道由浅入深的挑战，覆盖从摘要与签名，到浏览器 API、运行时检测和多阶段加密协议的分析练习。。
+CipherForge Arena 是一个用于学习 JavaScript 逆向、前端密码分析与浏览器运行时协议研究的本地训练靶场。项目提供 18 道由浅入深的挑战，覆盖从摘要与签名，到浏览器 API、运行时检测和多阶段加密协议的分析练习。
 
 **适合练习：** Web Crypto 调用分析、请求签名还原、浏览器反调试、Worker 与 Service Worker 追踪、自定义密文分析，以及多阶段业务协议的状态还原。
 <img width="2998" height="1640" alt="image" src="https://github.com/user-attachments/assets/9501f991-fa95-4482-b57b-f4878620d653" />
